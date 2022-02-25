@@ -1,0 +1,141 @@
+import pprint
+import yaml
+import os
+import sys
+import json
+from directories import *
+import snakemake
+
+snakemake.utils.min_version("6.0")
+
+yaml.warnings({'YAMLLoadWarning': False})
+shell.executable('/bin/bash')
+
+configfile: "config/params.yaml"
+
+SAMPLES = {}
+
+with open("samplesheet.yaml") as sheetfile:
+    SAMPLES = yaml.safe_load(sheetfile)
+
+def low_memory_job(wildcards, threads, attempt):
+    if config['computing_execution'] == 'local':
+        return min(attempt * threads * 1 * 1000, config['max_local_mem'])
+    return attempt * threads * 1 * 1000
+
+def medium_memory_job(wildcards, threads, attempt):
+    if config['computing_execution'] == 'local':
+        return min(attempt * threads * 2 * 1000, config['max_local_mem'])
+    return attempt * threads * 2 * 1000
+
+def high_memory_job(wildcards, threads, attempt):
+    if config['computing_execution'] == 'local':
+        return min(attempt * threads * 4 * 1000, config['max_local_mem'])
+    return attempt * threads * 4 * 1000
+
+
+rule all:
+    input:
+        expand("{p}{sample}_{read}.fq",
+            p = f"{datadir + cln + qcfilt}",
+            sample = SAMPLES,
+            read = ["pR1", "pR2", "U"]),
+        expand("{p}{sample}_{read}_fastqc.html",
+            p = f"{datadir + qc_post}",
+            sample = SAMPLES,
+            read = ["pR1", "pR2", "U"]),
+
+
+rule QC_raw:
+    input: lambda wildcards: SAMPLES[wildcards.sample][wildcards.read]
+    output:
+        html = f"{datadir + qc_pre}" + "{sample}_{read}_fastqc.html",
+        zipf = f"{datadir + qc_pre}" + "{sample}_{read}_fastqc.zip" 
+    conda:
+        f"{conda_envs}Clean.yaml"
+    log:
+        f"{logdir}" + "QC_raw_{sample}_{read}.log"
+    benchmark:
+        f"{logdir + bench}" + "QC_raw_{sample}_{read}.txt"
+    threads: config['threads']['QC']
+    resources:
+        mem_mb = low_memory_job
+    params:
+        output_dir = f"{datadir + qc_pre}",
+        script = srcdir("scripts/fqc.sh")
+    shell:
+        """
+        bash {params.script} {input} {params.output_dir} {output.html} {output.zipf} {log}
+        """
+
+rule QC_filter:
+    input: lambda wildcards: (SAMPLES[wildcards.sample][i] for i in ("R1", "R2"))
+    output: 
+        r1 = f"{datadir + cln + qcfilt}" + "{sample}_pR1.fq",
+        r2 = f"{datadir + cln + qcfilt}" + "{sample}_pR2.fq",
+        unpaired = f"{datadir + cln + qcfilt}" + "{sample}_U.fq",
+        html = f"{datadir + cln + qcfilt + html}" + "{sample}.fastp.html",
+        json = f"{datadir + cln + qcfilt + json}" + "{sample}.fastp.json",
+    conda:
+        f"{conda_envs}Clean.yaml"
+    log:
+        f"{logdir}" + "QC_filter_{sample}.log"
+    benchmark:
+        f"{logdir + bench}" + "QC_filter_{sample}.txt"
+    threads: config['threads']['QC']
+    resources:
+        mem_mb = medium_memory_job
+    params:
+        score = config['runparams']['qc_filter_score'],
+        size = config['runparams']['qc_filter_size'],
+        length= config['runparams']['qc_filter_length'],
+        adapters = srcdir("files/nexteraPE_adapters.fa")
+    shell:
+        """
+        fastp --thread {threads} \
+        --in1 {input[0]:q} \
+        --in2 {input[1]:q} \
+        --out1 {output.r1} \
+        --out2 {output.r2} \
+        --unpaired1 {output.unpaired} \
+        --unpaired2 {output.unpaired} \
+        -h {output.html} \
+        -j {output.json} \
+        -Q \
+        --cut_right --cut_right_window_size {params.size} \
+        --cut_right_mean_quality {params.score} \
+        --length_required {params.length} \
+        --adapter_fasta {params.adapters} > {log} 2>&1
+        """ 
+
+def fqinputs(wildcards):
+    return f"{datadir + cln + qcfilt + wildcards.sample}_{wildcards.read}.fq"
+    
+
+rule QC_clean:
+    input: 
+        fqinputs
+    output:
+        html = f"{datadir + qc_post}" + "{sample}_{read}_fastqc.html",
+        zipf = f"{datadir + qc_post}" + "{sample}_{read}_fastqc.zip"
+    conda:
+        f"{conda_envs}Clean.yaml"
+    log:
+        f"{logdir}" + "QC_clean_{sample}_{read}.log"
+    benchmark:
+        f"{logdir + bench}" + "QC_clean_{sample}_{read}.txt"
+    threads: config['threads']['QC']
+    resources:
+        mem_mb = low_memory_job
+    params:
+        output_dir = f"{datadir + qc_post}"
+    shell:
+        """
+        if [ -s {input} ]; then
+            fastqc -t {threads} --quiet --outdir {params.output_dir} {input} > {log} 2>&1
+        else
+            touch {output.html}
+            touch {output.zipf}
+            echo "touched things because input was empty" > {log} 2>&1
+        fi
+        """
