@@ -33,17 +33,18 @@ def high_memory_job(wildcards, threads, attempt):
         return min(attempt * threads * 4 * 1000, config['max_local_mem'])
     return attempt * threads * 4 * 1000
 
+def very_high_memory_job(wildcards, threads, attempt):
+    if config['computing_execution'] == 'local':
+        return min(attempt * threads * 4 * 1.75 * 1000, config['max_local_mem'])
+    return attempt * threads * 4 * 1.75 * 1000
+
 
 rule all:
     input:
-        expand("{p}{sample}_{read}.fq",
-            p = f"{datadir + cln + qcfilt}",
-            sample = SAMPLES,
-            read = ["pR1", "pR2", "U"]),
-        expand("{p}{sample}_{read}_fastqc.html",
-            p = f"{datadir + qc_post}",
-            sample = SAMPLES,
-            read = ["pR1", "pR2", "U"]),
+        f"{res}multiqc.html",
+        expand("{p}{sample}_scaffolds.fasta", 
+            p = f"{res+scf}",
+            sample = SAMPLES)
 
 
 rule QC_raw:
@@ -57,7 +58,7 @@ rule QC_raw:
         f"{logdir}" + "QC_raw_{sample}_{read}.log"
     benchmark:
         f"{logdir + bench}" + "QC_raw_{sample}_{read}.txt"
-    threads: config['threads']['QC']
+    threads: config['threads']['Filter']
     resources:
         mem_mb = low_memory_job
     params:
@@ -65,14 +66,14 @@ rule QC_raw:
         script = srcdir("scripts/fqc.sh")
     shell:
         """
-        bash {params.script} {input} {params.output_dir} {output.html} {output.zipf} {log}
+        bash {params.script} {input} {params.output_dir} {output.html} {output.zipf} {log} {threads}
         """
 
 rule QC_filter:
     input: lambda wildcards: (SAMPLES[wildcards.sample][i] for i in ("R1", "R2"))
     output: 
-        r1 = f"{datadir + cln + qcfilt}" + "{sample}_pR1.fq",
-        r2 = f"{datadir + cln + qcfilt}" + "{sample}_pR2.fq",
+        r1 = f"{datadir + cln + qcfilt}" + "{sample}_R1.fq",
+        r2 = f"{datadir + cln + qcfilt}" + "{sample}_R2.fq",
         unpaired = f"{datadir + cln + qcfilt}" + "{sample}_U.fq",
         html = f"{datadir + cln + qcfilt + html}" + "{sample}.fastp.html",
         json = f"{datadir + cln + qcfilt + json}" + "{sample}.fastp.json",
@@ -82,7 +83,7 @@ rule QC_filter:
         f"{logdir}" + "QC_filter_{sample}.log"
     benchmark:
         f"{logdir + bench}" + "QC_filter_{sample}.txt"
-    threads: config['threads']['QC']
+    threads: config['threads']['Filter']
     resources:
         mem_mb = medium_memory_job
     params:
@@ -101,20 +102,16 @@ rule QC_filter:
         --unpaired2 {output.unpaired} \
         -h {output.html} \
         -j {output.json} \
-        -Q \
+        -q {params.score} \
         --cut_right --cut_right_window_size {params.size} \
         --cut_right_mean_quality {params.score} \
         --length_required {params.length} \
         --adapter_fasta {params.adapters} > {log} 2>&1
         """ 
 
-def fqinputs(wildcards):
-    return f"{datadir + cln + qcfilt + wildcards.sample}_{wildcards.read}.fq"
-    
-
 rule QC_clean:
     input: 
-        fqinputs
+        f"{datadir + cln + qcfilt}" + "{sample}_{read}.fq"
     output:
         html = f"{datadir + qc_post}" + "{sample}_{read}_fastqc.html",
         zipf = f"{datadir + qc_post}" + "{sample}_{read}_fastqc.zip"
@@ -124,7 +121,7 @@ rule QC_clean:
         f"{logdir}" + "QC_clean_{sample}_{read}.log"
     benchmark:
         f"{logdir + bench}" + "QC_clean_{sample}_{read}.txt"
-    threads: config['threads']['QC']
+    threads: config['threads']['Filter']
     resources:
         mem_mb = low_memory_job
     params:
@@ -139,3 +136,180 @@ rule QC_clean:
             echo "touched things because input was empty" > {log} 2>&1
         fi
         """
+
+rule Remove_BG_p1:
+    input: 
+        bg = config['db']['background'],
+        r1 = rules.QC_filter.output.r1,
+        r2 = rules.QC_filter.output.r2,
+        un = rules.QC_filter.output.unpaired
+    output: 
+        bam = f"{datadir + cln + aln}" + "{sample}_raw-alignment.bam",
+        bai = f"{datadir + cln + aln}" + "{sample}_raw-alignment.bam.bai"
+    conda:
+        f"{conda_envs}Clean.yaml"
+    log:
+        f"{logdir}" + "Remove_BG_p1_{sample}.log"
+    benchmark:
+        f"{logdir + bench}" + "Remove_BG_p1_{sample}.txt"
+    threads: config['threads']['Alignments']
+    resources:
+        mem_mb = high_memory_job
+    params:
+        aln_type = '--local'
+    shell:
+        """
+        bowtie2 --time --threads {threads} \
+        {params.aln_type} \
+        -x {input.bg} \
+        -1 {input.r1} \
+        -2 {input.r2} \
+        -U {input.un} 2> {log} |\
+        samtools view -@ {threads} -uS - 2>> {log} |\
+        samtools sort -@ {threads} - -o {output.bam} >> {log} 2>&1
+        samtools index -@ {threads} {output.bam} >> {log} 2>&1
+        """
+
+
+rule Remove_BG_p2:
+    input: 
+        bam = rules.Remove_BG_p1.output.bam,
+        bai = rules.Remove_BG_p1.output.bai
+    output: 
+        r1 = f"{datadir + cln + filt}" + "{sample}_pR1.fq",
+        r2 = f"{datadir + cln + filt}" + "{sample}_pR2.fq",
+    conda:
+        f"{conda_envs}Clean.yaml"
+    log:
+        f"{logdir}" + "Remove_BG_p2_{sample}.log"
+    benchmark:
+        f"{logdir + bench}" + "Remove_BG_p2_{sample}.txt"
+    threads: config['threads']['Filter']
+    resources:
+        mem_mb = medium_memory_job
+    shell:
+        """
+        samtools view -@ {threads} -b -f 1 -f 8 {input.bam} 2> {log} |\
+        samtools sort -@ {threads} -n - 2>> {log} |\
+        bedtools bamtofastq -i - -fq {output.r1} -fq2 {output.r2} >> {log} 2>&1
+        """
+
+rule Remove_BG_p3:
+    input: 
+        bam = rules.Remove_BG_p1.output.bam,
+        bai = rules.Remove_BG_p1.output.bai    
+    output: 
+        tbam = temp(f"{datadir + cln + aln}" + "{sample}_temp_unpaired.bam"),
+        un = f"{datadir + cln + filt}" + "{sample}_unpaired.fq",
+    conda:
+        f"{conda_envs}Clean.yaml"
+    log:
+        f"{logdir}" + "Remove_BG_p3_{sample}.log"
+    benchmark:
+        f"{logdir + bench}" + "Remove_BG_p3_{sample}.txt"
+    threads: config['threads']['Filter']
+    resources:
+        mem_mb = medium_memory_job
+    shell:
+        """
+        samtools view -@ {threads} -b -F 1 -f 4 {input.bam} 2> {log} |\
+        samtools sort -@ {threads} -n -o {output.tbam} 2>> {log}
+        bedtools bamtofastq -i {output.tbam} -fq {output.un} >> {log} 2>&1
+        """
+
+rule Assemble:
+    input: 
+        r1 = rules.Remove_BG_p2.output.r1,
+        r2 = rules.Remove_BG_p2.output.r2,
+        un = rules.Remove_BG_p3.output.un
+    output: 
+        scaffolds = f"{datadir + asm + raw}" + "{sample}/scaffolds.fasta",
+        scaff_filt = f"{datadir + asm + filt}" + "{sample}_scaffolds_filtered.fasta",
+    conda:
+        f"{conda_envs}Assemble.yaml"
+    log:
+        f"{logdir}" + "Assemble_{sample}.log"
+    benchmark:
+        f"{logdir + bench}" + "Assemble_{sample}.txt"
+    threads: config['threads']['Assemble']
+    resources:
+        mem_mb = very_high_memory_job
+    params:
+        min_contig_len = config['Assembly']['min_contig_len'],
+        kmersizes = config['Assembly']['kmersizes'],
+        outdir = f"{datadir + asm + raw}" + "{sample}/"
+    shell:
+        """
+        spades.py --only-assembler --meta \
+        -1 {input.r1} \
+        -2 {input.r2} \
+        -s {input.un} \
+        -t {threads} \
+        -m $(({resources.mem_mb} / 1000)) \
+        -k {params.kmersizes} \
+        -o {params.outdir} > {log} 2>&1
+        seqtk seq {output.scaffolds} 2>> {log} |\
+        gawk -F "_" '/^>/ {{if ($4 >= {params.min_contig_len}) {{print $0; getline; print $0}};}}' 2>> {log} 1> {output.scaff_filt} 
+        """
+
+rule Copy_scaffolds:
+    input: rules.Assemble.output.scaff_filt
+    output: f"{res+scf}" + "{sample}_scaffolds.fasta"
+    threads: 1
+    resources:
+        mem_mb = low_memory_job
+    shell:
+        """
+        cp {input} {output}
+        """	
+
+rule MultiQC:
+    input: 
+        expand( rules.QC_raw.output.zipf,
+                sample = SAMPLES,
+                read = ['R1', 'R2'] ),
+        expand( rules.QC_clean.output.zipf,
+                sample = SAMPLES,
+                read = ['R1', 'R2'] ),
+        expand( rules.QC_filter.output.json,
+                sample = SAMPLES,
+                read = ['R1', 'R2', 'U'] ),
+        expand( rules.Remove_BG_p1.log,
+                sample = SAMPLES ),
+    output: 
+        f"{res}multiqc.html",
+        expand( "{p}multiqc_{program}.txt",
+                p = f"{res+mqc_data}",
+                program = ['fastqc', 'fastp', 'bowtie2'] ),
+    conda:
+        f"{conda_envs}Clean.yaml"
+    log:
+        f"{logdir}" + "MultiQC.log"
+    benchmark:
+        f"{logdir + bench}" + "MultiQC.txt"
+    threads: config['threads']['MultiQC']
+    resources:
+        mem_mb = medium_memory_job
+    params:
+        conf = srcdir("files/multiqc_config.yaml"),
+        outdir = f"{res}"
+    shell:
+        """
+        multiqc -d --force --config {params.conf} -o {params.outdir} -n multiqc.html {input} > {log} 2>&1
+        """
+
+
+onsuccess:
+    print("""
+    VirASM is finished with processing all the files in the given input directory.
+
+    Shutting down...
+    """)
+    return True
+
+onerror:
+    print("""
+    An error occurred and VirASM had to shut down.
+    Please check the the input and lugfiles for any abnormalities and try again.
+    """)
+    return False
