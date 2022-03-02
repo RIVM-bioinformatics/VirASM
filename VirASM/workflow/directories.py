@@ -9,6 +9,8 @@ datadir = "data/"
 cln = "cleaned_fastq/"
 qcfilt = "QC_filter/"
 
+asm = "assembly/"
+scf = "scaffolds/"
 
 html = "html/"
 json = "json/"
