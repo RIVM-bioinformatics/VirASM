@@ -11,8 +11,6 @@ snakemake.utils.min_version("6.0")
 yaml.warnings({'YAMLLoadWarning': False})
 shell.executable('/bin/bash')
 
-configfile: "config/params.yaml"
-
 SAMPLES = {}
 
 with open("samplesheet.yaml") as sheetfile:
