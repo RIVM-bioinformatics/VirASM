@@ -104,9 +104,11 @@ class tabCompleter:
 
         self.listCompleter = listCompleter
 
+
 def get_max_local_mem():
     mem = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
-    return int(round(mem / (1024.0 ** 2)- 2000, -3))
+    return int(round(mem / (1024.0 ** 2) - 2000, -3))
+
 
 class DefaultConfig:
     """
@@ -133,12 +135,7 @@ class DefaultConfig:
     }
     params = {
         "sample_sheet": "samplesheet.yaml",
-        "threads": {
-            "Alignments": 12,
-            "Filter": 6,
-            "Assemble": 14,
-            "MultiQC": 1,
-        },
+        "threads": {"Alignments": 12, "Filter": 6, "Assemble": 14, "MultiQC": 1,},
         "computing_execution": "grid",
         "max_local_mem": get_max_local_mem(),
         "runparams": {
@@ -147,11 +144,8 @@ class DefaultConfig:
             "qc_filter_length": 50,
             "qc_filter_size": 5,
         },
-        "Assembly": {
-            "min_contig_len": 250,
-            "kmersizes": "21,33,55,77",
-        },
+        "Assembly": {"min_contig_len": 250, "kmersizes": "21,33,55,77",},
         "db": {
             "background": "/mnt/db/Jovian/Human_genome_without_EBV_no_decoy_GRCh38/genome.fa"
-        }
+        },
     }

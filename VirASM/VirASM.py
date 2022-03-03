@@ -93,25 +93,25 @@ def get_args(givenargs):
         action="store_true",
         help="Use VirASM locally instead of in a grid-computing configuration",
     )
-    
+
     optional_args.add_argument(
-        '--background',
+        "--background",
         type=str,
         metavar="File",
-        help="Override the default human genome background file"
+        help="Override the default human genome background file",
     )
-    
+
     optional_args.add_argument(
-        '--dryrun',
-        action='store_true',
-        help='run the VirASM workflow without actually doing anything (check if the workflow will run as expected)'
+        "--dryrun",
+        action="store_true",
+        help="run the VirASM workflow without actually doing anything (check if the workflow will run as expected)",
     )
-    
+
     optional_args.add_argument(
-        '--threads',
+        "--threads",
         default=min(multiprocessing.cpu_count(), 128),
         type=int,
-        metavar='N',
+        metavar="N",
         help=f"Number of local threads that are available to use.\nDefault is the number of available threads in your system ({min(multiprocessing.cpu_count(), 128)})",
     )
 
@@ -123,6 +123,7 @@ def get_args(givenargs):
     else:
         flags = arg.parse_args(givenargs)
     return flags
+
 
 def CheckInputFiles(indir):
     """
@@ -137,6 +138,7 @@ def CheckInputFiles(indir):
 
     return bool(any(i in allowedextensions for i in foundfiles))
 
+
 def main():
     """
     VirASM starting point
@@ -146,14 +148,14 @@ def main():
 
     if not flags.skip_updates:
         update(sys.argv)
-    
+
     inpath = os.path.abspath(flags.input)
     start_path = os.getcwd()
     outpath = os.path.abspath(flags.output)
     exec_folder = os.path.abspath(os.path.dirname(__file__))
-    
+
     Snakefile = os.path.join(exec_folder, "workflow", "Snakefile")
-    
+
     if CheckInputFiles(inpath) is False:
         print(
             f"""
@@ -170,45 +172,53 @@ Please check the input directory and try again. Exiting...
         )
     if not os.path.exists(outpath):
         os.makedirs(outpath)
-    
+
     if not os.getcwd() == outpath:
         os.chdir(outpath)
     workdir = outpath
-    
+
     samplesheet = WriteSampleSheet(inpath)
-    
-    paramfile, conffile, paramdict, confdict = WriteConfigs(samplesheet, flags.threads, os.getcwd(), flags.local, flags.background, flags.dryrun)
-    
+
+    paramfile, conffile, paramdict, confdict = WriteConfigs(
+        samplesheet,
+        flags.threads,
+        os.getcwd(),
+        flags.local,
+        flags.background,
+        flags.dryrun,
+    )
+
     if flags.local is True:
         status = snakemake.snakemake(
             Snakefile,
             workdir=workdir,
-            conda_frontend='mamba',
-            cores=confdict['cores'],
-            use_conda=confdict['use-conda'],
-            jobname=confdict['jobname'],
-            latency_wait=confdict['latency-wait'],
-            dryrun=confdict['dryrun'],
+            conda_frontend="mamba",
+            cores=confdict["cores"],
+            use_conda=confdict["use-conda"],
+            jobname=confdict["jobname"],
+            latency_wait=confdict["latency-wait"],
+            dryrun=confdict["dryrun"],
             configfiles=[paramfile],
-            restart_times=3,)
+            restart_times=3,
+        )
     if flags.local is False:
         status = snakemake.snakemake(
             Snakefile,
             workdir=workdir,
-            conda_frontend='mamba',
-            cores=confdict['cores'],
-            nodes=confdict['cores'],
-            use_conda=confdict['use-conda'],
-            jobname=confdict['jobname'],
-            latency_wait=confdict['latency-wait'],
-            drmaa=confdict['drmaa'],
-            drmaa_log_dir=confdict['drmaa-log-dir'],
-            dryrun=confdict['dryrun'],
+            conda_frontend="mamba",
+            cores=confdict["cores"],
+            nodes=confdict["cores"],
+            use_conda=confdict["use-conda"],
+            jobname=confdict["jobname"],
+            latency_wait=confdict["latency-wait"],
+            drmaa=confdict["drmaa"],
+            drmaa_log_dir=confdict["drmaa-log-dir"],
+            dryrun=confdict["dryrun"],
             configfiles=[paramfile],
             restart_times=3,
         )
-    
-    if confdict['dryrun'] is False and status is True:
+
+    if confdict["dryrun"] is False and status is True:
         snakemake.snakemake(
             Snakefile,
             workdir=workdir,

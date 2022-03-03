@@ -22,6 +22,7 @@ def illumina_sheet(inputdir, sheet):
         yaml.dump(samples, samplesheet, default_flow_style=False)
     samplesheet.close()
 
+
 def WriteSampleSheet(inputdir):
     illumina_sheet(inputdir, "samplesheet.yaml")
     samplesheet = os.getcwd() + "/samplesheet.yaml"
