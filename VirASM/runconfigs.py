@@ -2,13 +2,12 @@
 Construct and write configuration files for VirASM.
 """
 
-from inspect import Parameter
 import multiprocessing
 import os
-from pytest import param
 
 import yaml
-from .functions import DefaultConfig, get_max_local_mem
+
+from .functions import DefaultConfig
 
 
 def set_cores(cores):

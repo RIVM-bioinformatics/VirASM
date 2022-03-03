@@ -14,15 +14,12 @@ import sys
 
 import snakemake
 import yaml
-from VirASM.runconfigs import WriteConfigs
 
-from VirASM.samplesheet import WriteSampleSheet
-
-from VirASM.functions import MyHelpFormatter, color
-
-from VirASM.update import update
 from VirASM import __version__
-
+from VirASM.functions import MyHelpFormatter, color
+from VirASM.runconfigs import WriteConfigs
+from VirASM.samplesheet import WriteSampleSheet
+from VirASM.update import update
 
 yaml.warnings({"YAMLLoadWarning": False})
 

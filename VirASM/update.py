@@ -1,12 +1,13 @@
 import json
+import readline
 import subprocess
 import sys
 from distutils.version import LooseVersion
 from urllib import request
-import readline
+
+from VirASM import __version__
 
 from .functions import color, tabCompleter
-from VirASM import __version__
 
 
 def AskPrompts(intro, prompt, options, fixedchoices=False):

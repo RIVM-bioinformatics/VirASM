@@ -4,7 +4,9 @@ Write the samplesheets
 
 import os
 import re
+
 import yaml
+
 
 def illumina_sheet(inputdir, sheet):
     illuminapattern = re.compile(r"(.*)(_|\.)R?(1|2)(?:_.*\.|\..*\.|\.)f(ast)?q(\.gz)?")
