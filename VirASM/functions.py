@@ -129,7 +129,7 @@ class DefaultConfig:
             "use-conda": True,
             "dryrun": False,
             "jobname": "VirASM_{name}.{jobid}",
-            "drmaa": ' -q bio -n {threads} -R "span[hosts=1]" -M {resources.memb_mb}',
+            "drmaa": ' -q bio -n {threads} -R "span[hosts=1]" -M {resources.mem_mb}',
             "drmaa-log-dir": "logs/drmaa",
         },
     }
